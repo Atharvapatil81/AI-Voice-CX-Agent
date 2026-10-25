@@ -83,6 +83,20 @@
               End Call
             </button>
           </div>
+
+          <div class="call-settings" aria-label="Call settings">
+            <label class="field field-inline">
+              <span class="field-label">Voice</span>
+              <select id="voiceSelect"></select>
+            </label>
+            <label class="toggle toggle-compact" title="Interrupt Aria by talking over her. Works best with headphones.">
+              <input type="checkbox" id="bargeIn" checked />
+              <span class="toggle-text">
+                <span class="toggle-title">Barge-in</span>
+                <span class="toggle-desc">Talk over Aria to interrupt</span>
+              </span>
+            </label>
+          </div>
         </div>
 
         <div id="captions" class="captions" aria-live="polite"></div>
@@ -120,23 +134,6 @@
           </div>
           <div id="scenarios" class="chips"></div>
           <p class="card-sub">Click a prompt to drop it into the message box, or just say it out loud.</p>
-        </section>
-
-        <section class="card settings">
-          <div class="card-head">
-            <h3>Settings</h3>
-          </div>
-          <label class="field">
-            <span class="field-label">Agent voice</span>
-            <select id="voiceSelect"></select>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="bargeIn" checked />
-            <span class="toggle-text">
-              <span class="toggle-title">Barge-in</span>
-              <span class="toggle-desc">Interrupt Aria by talking over her. Works best with headphones.</span>
-            </span>
-          </label>
         </section>
       </aside>
     </main>
