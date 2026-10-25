@@ -7,6 +7,7 @@ const GREETING = "Hi, I'm Aria from Aura Skincare. How can I help you today?";
 const STILL_THERE = "Are you still there? I'm happy to help with anything about your Aura order.";
 const SILENCE_PROMPT_MS = 15000;
 const LOW_CONFIDENCE = 0.4;
+const REPLY_TIMEOUT_MS = 25000;
 // Spoken while a tool runs, so an order lookup doesn't leave dead air.
 const FILLERS = ['Let me check that for you.', 'One moment, let me look that up.', 'Sure, checking that now.'];
 
@@ -62,7 +63,34 @@ const PHASE_TEXT = {
   error: ['Problem', ''],
 };
 
-function setPhase(phase, detail) {
+/**
+ * Decide whether the mic should be on for this phase.
+ * - Barge-in off (default): half-duplex. The mic is off while Aria thinks or
+ *   speaks, so it can never pick up her voice from the speakers.
+ * - Whenever we return to listening after Aria spoke, start a fresh
+ *   recognition session so any echo Chrome was still holding is dropped.
+ * - keepMic: the customer just interrupted mid-sentence, so keep the
+ *   current session and their words.
+ */
+function syncMic(prev, phase, keepMic) {
+  if (!listener) return;
+  const agentBusy = phase === 'thinking' || phase === 'speaking' || phase === 'connecting';
+  if (agentBusy) {
+    if (!els.bargeIn.checked) listener.pause();
+    else if (listener.paused) listener.resume();
+    return;
+  }
+  if (phase === 'listening') {
+    if (keepMic) {
+      if (listener.paused) listener.resume();
+    } else if (prev !== 'listening' || listener.paused) {
+      listener.resume();
+    }
+  }
+}
+
+function setPhase(phase, detail, { keepMic = false } = {}) {
+  const prev = call.phase;
   call.phase = phase;
   els.orb.dataset.phase = phase;
   els.stateLabel.dataset.phase = phase;
@@ -72,7 +100,7 @@ function setPhase(phase, detail) {
   if (phase === 'listening' && !listener) text = 'Text mode: type your message below.';
   els.stateDetail.textContent = text;
 
-  if (listener) listener.muted = !els.bargeIn.checked && (phase === 'thinking' || phase === 'speaking');
+  syncMic(prev, phase, keepMic);
   clearTimeout(call.silenceTimer);
   if (phase === 'listening' && !call.promptedSilence && listener) {
     call.silenceTimer = setTimeout(promptSilence, SILENCE_PROMPT_MS);
@@ -235,7 +263,10 @@ function interrupt() {
     }
     call.reply = null;
   }
-  setPhase('listening', 'Interrupted, go ahead.');
+  // Drop what was already recognised (likely Aria's own voice); the words the
+  // customer is still saying keep arriving in the same session.
+  listener?.reset();
+  setPhase('listening', 'Interrupted, go ahead.', { keepMic: true });
 }
 
 // ---------- conversation ----------
@@ -261,6 +292,9 @@ async function requestReply() {
   if (call.abort) call.abort.abort();
   const controller = new AbortController();
   call.abort = controller;
+  // Never leave the customer stuck on "Thinking" if the network or AI stalls.
+  let timedOut = false;
+  const stallTimer = setTimeout(() => { timedOut = true; controller.abort(); }, REPLY_TIMEOUT_MS);
   listener?.reset();
   setPhase('thinking');
 
@@ -349,12 +383,13 @@ async function requestReply() {
     speaker.finish();
     if ((!reply.text && !reply.filler) || !ttsSupported) setPhase('listening');
   } catch (err) {
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted && !timedOut) return; // barge-in or call ended
     console.error(err);
     const msg = "Sorry, I'm having trouble connecting right now. Could you please try again in a moment?";
-    showNotice(`Couldn't reach the agent: ${escapeHtml(err.message)}`);
-    if (call.reply === reply) speakScripted(msg);
+    showNotice(timedOut ? 'The agent took too long to reply. Please try again.' : `Couldn't reach the agent: ${escapeHtml(err.message)}`);
+    if (call.reply === reply && call.phase !== 'ended') speakScripted(msg);
   } finally {
+    clearTimeout(stallTimer);
     if (call.abort === controller) call.abort = null;
   }
 }
@@ -437,6 +472,7 @@ async function startCall() {
       },
     });
     listener.start();
+    syncMic(call.phase, call.phase, false); // mic stays off during the greeting unless barge-in is on
   }
 
   els.end.disabled = false;

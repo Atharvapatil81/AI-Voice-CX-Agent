@@ -24,6 +24,14 @@ test('isLikelyEcho separates our own voice from a real interruption', () => {
   assert.equal(isLikelyEcho('wait actually I want to cancel it', agent), false);
 });
 
+test('isLikelyEcho ignores mis-heard echo of the greeting', () => {
+  const greeting = "Hi, I'm Aria from Aura Skincare. How can I help you today?";
+  assert.equal(isLikelyEcho("hi I'm area from aura skin care", greeting), true);
+  assert.equal(isLikelyEcho('hi am aria from aura skincare how can i help you', greeting), true);
+  assert.equal(isLikelyEcho('how can I help you to day', greeting), true);
+  assert.equal(isLikelyEcho('where is my order ORD-101', greeting), false);
+});
+
 test('rankVoices prefers Indian English voices', () => {
   const voices = [
     { name: 'Google US English', lang: 'en-US' },

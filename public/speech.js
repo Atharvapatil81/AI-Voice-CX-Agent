@@ -7,35 +7,60 @@ export const sttSupported = Boolean(SR);
 export const ttsSupported = hasWindow && 'speechSynthesis' in window;
 
 /**
- * Continuous speech recogniser with our own end-of-turn detection.
- * Chrome marks a result "final" at short pauses; we wait `endpointMs` more
+ * Speech recogniser with our own end-of-turn detection.
+ *
+ * Chrome marks a result "final" at short pauses; we wait endpointMs more
  * before treating the utterance as complete, so a customer reading out an
  * order ID with small pauses isn't cut off mid-sentence.
+ *
+ * pause() / resume() let the call run half-duplex: the mic is fully off while
+ * Aria speaks (so it can't hear her through the speakers), and every resume()
+ * starts a brand-new recognition session, which also throws away any late
+ * results Chrome was still holding from the echo.
  */
 export class Listener {
   constructor({ lang = 'en-IN', endpointMs = 750, onActivity, onUtterance, onFatal }) {
     Object.assign(this, { lang, endpointMs, onActivity, onUtterance, onFatal });
     this.active = false;
-    this.muted = false;
+    this.paused = false;
     this.rec = null;
+    this.spawnTimer = null;
+    this.healthTimer = null;
     this._clearBuffer();
   }
 
   start() {
     if (!sttSupported) return;
     this.active = true;
+    this.paused = false;
     this._clearBuffer();
-    this._spawn();
+    this._spawnSoon(0);
   }
 
   stop() {
     this.active = false;
-    clearTimeout(this.timer);
-    try { this.rec?.abort(); } catch { /* already stopped */ }
-    this.rec = null;
+    this._clearBuffer();
+    this._kill();
   }
 
-  /** Throw away anything heard so far (e.g. our own voice echoing back). */
+  /** Turn the mic off (Aria is talking). Anything buffered is discarded. */
+  pause() {
+    if (!this.active || this.paused) return;
+    this.paused = true;
+    this._clearBuffer();
+    this._kill();
+  }
+
+  /** Start listening again with a fresh session. */
+  resume() {
+    if (!this.active) return;
+    this.paused = false;
+    this._clearBuffer();
+    this._kill();
+    this._spawnSoon();
+  }
+
+  /** Throw away anything heard so far, but keep the session running. */
   reset() {
     this._clearBuffer();
   }
@@ -52,15 +77,38 @@ export class Listener {
     this.confidences = [];
   }
 
+  /** Detach and abort the current session so none of its events reach us. */
+  _kill() {
+    clearTimeout(this.spawnTimer);
+    clearTimeout(this.healthTimer);
+    const rec = this.rec;
+    this.rec = null;
+    if (!rec) return;
+    rec.onresult = rec.onend = rec.onerror = rec.onstart = null;
+    try { rec.abort(); } catch { /* already stopped */ }
+  }
+
+  _spawnSoon(delay = 150) {
+    clearTimeout(this.spawnTimer);
+    this.spawnTimer = setTimeout(() => {
+      if (this.active && !this.paused && !this.rec) this._spawn();
+    }, delay);
+  }
+
   _spawn() {
+    // A new object every time: restarting a used instance can silently die
+    // in Chrome after a few sessions.
     const rec = new SR();
     rec.lang = this.lang;
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
+    let started = false;
+
+    rec.onstart = () => { started = true; };
 
     rec.onresult = (e) => {
-      if (this.muted) return;
+      if (this.rec !== rec || this.paused) return;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -84,22 +132,19 @@ export class Listener {
     };
 
     rec.onerror = (e) => {
+      if (this.rec !== rec) return;
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
         this.active = false;
         this.onFatal?.(e.error);
       }
-      // 'no-speech', 'aborted', 'network': onend fires next and we restart.
+      // 'no-speech', 'aborted', 'network': onend fires next and we respawn.
     };
 
     rec.onend = () => {
-      // Chrome stops continuous recognition after silence or ~60s. Restart
-      // transparently for as long as the call is live.
-      if (this.active && this.rec === rec) {
-        setTimeout(() => {
-          if (!this.active || this.rec !== rec) return;
-          try { rec.start(); } catch { this._spawn(); }
-        }, 120);
-      }
+      // Chrome ends sessions after silence or ~60s. Replace it with a fresh one.
+      if (this.rec !== rec) return;
+      this.rec = null;
+      if (this.active && !this.paused) this._spawnSoon();
     };
 
     this.rec = rec;
@@ -107,7 +152,18 @@ export class Listener {
       rec.start();
     } catch (err) {
       console.warn('Speech recognition failed to start', err);
+      this.rec = null;
+      this._spawnSoon(500);
+      return;
     }
+    // Health check: if the session never actually starts, try again.
+    clearTimeout(this.healthTimer);
+    this.healthTimer = setTimeout(() => {
+      if (this.rec === rec && !started && this.active && !this.paused) {
+        this._kill();
+        this._spawnSoon();
+      }
+    }, 4000);
   }
 
   _commit() {
@@ -204,12 +260,16 @@ export class Speaker {
     this.closed = true;
     this.started = false;
     this.watchdog = null;
+    this.watchdogRunning = false;
+    this.current = null; // { u, startedAt, expectedMs } for the sentence being spoken
+    this.lastProgress = 0;
   }
 
   begin() {
     this.cancel();
     this.closed = false;
     this.started = false;
+    this.lastProgress = Date.now();
     this._startWatchdog();
   }
 
@@ -222,6 +282,9 @@ export class Speaker {
     u.rate = this.rate;
     u.onstart = () => {
       if (!this.pending.has(u)) return;
+      // Roughly 13 characters per second of speech, plus generous slack.
+      this.current = { u, startedAt: Date.now(), expectedMs: (spoken.length * 80) / this.rate + 3000 };
+      this.lastProgress = Date.now();
       if (!this.started) {
         this.started = true;
         this.onFirstAudio?.();
@@ -229,7 +292,9 @@ export class Speaker {
       this.onSentence?.(text);
     };
     u.onend = u.onerror = () => this._done(u);
+    if (!this.pending.size) this.lastProgress = Date.now();
     this.pending.add(u); // holding a reference also stops Chrome from GC-ing it mid-speech
+    if (!this.watchdogRunning) this._startWatchdog();
     speechSynthesis.speak(u);
   }
 
@@ -240,8 +305,9 @@ export class Speaker {
 
   cancel() {
     this.pending.clear();
+    this.current = null;
     this.closed = true;
-    clearInterval(this.watchdog);
+    this._stopWatchdog();
     if (ttsSupported) speechSynthesis.cancel();
   }
 
@@ -251,40 +317,76 @@ export class Speaker {
 
   _done(u) {
     if (!this.pending.delete(u)) return;
+    if (this.current?.u === u) this.current = null;
+    this.lastProgress = Date.now();
     if (this.pending.size === 0 && this.closed) this._idle();
   }
 
   _idle() {
-    clearInterval(this.watchdog);
+    this._stopWatchdog();
     this.onIdle?.();
   }
 
-  // Chrome occasionally never fires onend. If the engine says it is silent
-  // twice in a row while we still think something is queued, move on.
+  /** The speech engine is stuck: reset it and move on rather than hang the call. */
+  _recover() {
+    this.pending.clear();
+    this.current = null;
+    if (ttsSupported) speechSynthesis.cancel();
+    if (this.closed) this._idle();
+  }
+
+  _stopWatchdog() {
+    clearInterval(this.watchdog);
+    this.watchdogRunning = false;
+  }
+
+  // Chrome's speechSynthesis has known hangs: onend never fires, "speaking"
+  // stays true forever, or it pauses itself. Detect each one and recover.
   _startWatchdog() {
     clearInterval(this.watchdog);
+    this.watchdogRunning = true;
     let silentTicks = 0;
     this.watchdog = setInterval(() => {
       if (!this.pending.size) return;
+      if (speechSynthesis.paused) speechSynthesis.resume();
+      const now = Date.now();
       const silent = !speechSynthesis.speaking && !speechSynthesis.pending;
       silentTicks = silent ? silentTicks + 1 : 0;
-      if (silentTicks >= 3) {
-        this.pending.clear();
-        if (this.closed) this._idle();
-      }
+      const overran = this.current && now - this.current.startedAt > this.current.expectedMs;
+      const neverStarted = !this.current && now - this.lastProgress > 5000;
+      if (silentTicks >= 3 || overran || neverStarted) this._recover();
     }, 400);
   }
 }
 
 /**
  * Did the microphone just hear Aria's own voice (speakers -> mic), or is the
- * customer really talking? Count words that are NOT in what Aria is saying.
+ * customer really talking? Speech recognition mishears our own voice
+ * ("Aria" -> "area", "skincare" -> "skin care"), so words are matched
+ * fuzzily against what Aria said, and it takes 3+ clearly new words to count
+ * as a real interruption.
  */
 export function isLikelyEcho(heard, agentText) {
-  const words = (s) => s.toLowerCase().match(/[a-z0-9ऀ-ॿ]+/g) ?? [];
+  const words = (s) => String(s ?? '').toLowerCase().match(/[a-z0-9ऀ-ॿ]+/g) ?? [];
   const heardWords = words(heard);
-  if (heardWords.length < 2) return true; // "uh", single noise words: not a barge-in
-  const agentWords = new Set(words(agentText));
-  const novel = heardWords.filter((w) => !agentWords.has(w)).length;
-  return !(novel >= 2 && novel / heardWords.length >= 0.4);
+  if (heardWords.length < 3) return true; // too short to be a deliberate interruption
+  const agentWords = words(agentText);
+  const agentSet = new Set(agentWords);
+  const joined = agentWords.join('');
+  const close = (a, b) => {
+    if (a[0] !== b[0] || Math.abs(a.length - b.length) > 2) return false;
+    const limit = Math.max(a.length, b.length) > 5 ? 2 : 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i); // Levenshtein distance
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[b.length] <= limit;
+  };
+  const known = (w) => agentSet.has(w) || (w.length >= 4 && joined.includes(w)) || agentWords.some((a) => close(a, w));
+  const novel = heardWords.filter((w) => !known(w)).length;
+  return !(novel >= 3 && novel / heardWords.length >= 0.6);
 }
