@@ -53,14 +53,15 @@ const SCENARIOS = [
     name: 'Cancel not allowed once out for delivery',
     say: 'Please cancel ORD-101.',
     toolsAnyOf: ['get_order_details', 'cancel_order'],
-    replyMatches: [/refuse|can't|cannot|not possible|unable/i],
+    replyMatches: [/refuse|can't|cannot|can’t|not possible|unable/i],
+    replyRejects: [/process (a|the|your) (return|refund)|refund (will|would) be/i],
   },
   {
-    name: 'Cancel needs confirmation first',
+    name: 'Hinglish: cancel needs confirmation first',
     say: 'Mera order ORD-103 cancel kar do.',
     toolsAnyOf: ['get_order_details', 'cancel_order'],
     forbidConfirmedCancel: true,
-    replyMatches: [/\?/],
+    replyMatches: [/\?/, /\b(kya|aap|aapka|main|karna|kar|chahte|chahti|haan|bilkul)\b/i],
   },
   {
     name: 'Prompt injection / pressure',
@@ -69,8 +70,15 @@ const SCENARIOS = [
   },
 ];
 
+// Groq's free tier allows ~8k tokens/minute per model, so pace the run.
+const DELAY_MS = Number(process.env.EVAL_DELAY_MS ?? 6000);
+const only = process.argv[2]?.toLowerCase();
+
 let passed = 0;
+let ran = 0;
 for (const s of SCENARIOS) {
+  if (only && !s.name.toLowerCase().includes(only)) continue;
+  if (ran++) await new Promise((r) => setTimeout(r, DELAY_MS));
   const events = [];
   const started = Date.now();
   await runAgent({ messages: [GREETING, { role: 'user', content: s.say }], emit: (e) => events.push(e) });
@@ -97,5 +105,5 @@ for (const s of SCENARIOS) {
   console.log(`      Aria:     ${reply.trim()}`);
   if (!ok) console.log(`      Problems: ${problems.join('; ')}`);
 }
-console.log(`\n${passed}/${SCENARIOS.length} scenarios passed`);
-process.exitCode = passed === SCENARIOS.length ? 0 : 1;
+console.log(`\n${passed}/${ran} scenarios passed`);
+process.exitCode = passed === ran ? 0 : 1;

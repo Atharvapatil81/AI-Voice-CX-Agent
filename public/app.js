@@ -7,6 +7,8 @@ const GREETING = "Hi, I'm Aria from Aura Skincare. How can I help you today?";
 const STILL_THERE = "Are you still there? I'm happy to help with anything about your Aura order.";
 const SILENCE_PROMPT_MS = 15000;
 const LOW_CONFIDENCE = 0.4;
+// Spoken while a tool runs, so an order lookup doesn't leave dead air.
+const FILLERS = ['Let me check that for you.', 'One moment, let me look that up.', 'Sure, checking that now.'];
 
 const SCENARIOS = [
   { text: 'Where is my order ORD-101?', tag: 'tracking' },
@@ -307,7 +309,7 @@ async function requestReply() {
         reply.text += ev.delta;
         buffer += ev.delta;
         if (!reply.entry) reply.entry = addEntry({ role: 'agent', text: '', at: Date.now() });
-        reply.entry.text = reply.text.trim();
+        reply.entry.text = [reply.filler, reply.text.trim()].filter(Boolean).join(' ');
         reply.entry.el.querySelector('.text').textContent = reply.entry.text;
         els.live.scrollTop = els.live.scrollHeight;
         flush(false);
@@ -315,6 +317,11 @@ async function requestReply() {
         const id = ev.args?.order_id ? ` ${ev.args.order_id}` : '';
         const label = { get_order_details: 'Looking up order', check_return_eligibility: 'Checking return policy for', cancel_order: 'Processing cancellation for', escalate_to_human: 'Raising a support ticket' }[ev.name] || ev.name;
         els.stateDetail.textContent = `${label}${id}…`;
+        if (!reply.text && !reply.filler) {
+          reply.filler = FILLERS[Math.floor(Math.random() * FILLERS.length)];
+          speaker.speak(reply.filler);
+          reply.entry = addEntry({ role: 'agent', text: reply.filler, at: Date.now() });
+        }
       } else if (ev.type === 'tool') {
         const entry = { role: 'tool', name: ev.name, args: ev.args, result: ev.result, at: Date.now() };
         // Keep the tool row above the reply text it produced.
@@ -336,11 +343,11 @@ async function requestReply() {
 
     if (call.reply !== reply) return;
     flush(true);
-    call.lastReplyText = reply.text;
+    call.lastReplyText = [reply.filler, reply.text].filter(Boolean).join(' ');
     if (!reply.done) call.messages.push({ role: 'assistant', content: reply.text });
     reply.done = true;
     speaker.finish();
-    if (!reply.text || !ttsSupported) setPhase('listening');
+    if ((!reply.text && !reply.filler) || !ttsSupported) setPhase('listening');
   } catch (err) {
     if (controller.signal.aborted) return;
     console.error(err);

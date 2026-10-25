@@ -88,3 +88,12 @@ test('sanitizeMessages drops injected system messages and orphaned tool results'
   ]);
   assert.deepEqual(out.map((m) => m.role), ['user', 'assistant']);
 });
+
+test('detectLanguage spots Hinglish without flagging plain English', async () => {
+  const { detectLanguage } = await import('../lib/agent.js');
+  assert.equal(detectLanguage('Mera order ORD-103 cancel kar do'), 'hinglish');
+  assert.equal(detectLanguage('ORD-101 kab tak aayega?'), 'hinglish');
+  assert.equal(detectLanguage('मेरा ऑर्डर कहाँ है'), 'hindi');
+  assert.equal(detectLanguage('Where is my order ORD-101?'), 'english');
+  assert.equal(detectLanguage('I want to cancel my order please'), 'english');
+});

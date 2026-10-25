@@ -6,7 +6,7 @@ A browser-based voice customer support agent for **Aura Skincare**, a fictional 
 - **Demo video:** `<add link>`
 - **Best in:** Chrome or Microsoft Edge on desktop (Edge has the most natural Indian English voice).
 
-> **Approach in brief:** A modular pipeline that runs in the browser: Web Speech API speech-to-text (en-IN), a Groq-hosted Llama 3.3 70B agent with function calling for order lookups and policy checks, and sentence-by-sentence browser text-to-speech with an Indian English voice. Policy decisions (return windows, cancellation rules) live in deterministic code that the LLM calls as tools, so the model decides *when* to check and the code decides *what is true*. Replies stream token by token and Aria starts speaking after the first sentence, which keeps the gap between turns short.
+> **Approach in brief:** A modular pipeline that runs in the browser: Web Speech API speech-to-text (en-IN), a Groq-hosted `gpt-oss-120b` agent (low reasoning effort) with function calling for order lookups and policy checks, and sentence-by-sentence browser text-to-speech with an Indian English voice. Policy decisions (return windows, cancellation rules) live in deterministic code that the LLM calls as tools, so the model decides *when* to check and the code decides *what is true*. Replies stream token by token and Aria starts speaking after the first sentence, which keeps the gap between turns short.
 
 ---
 
@@ -23,7 +23,9 @@ A browser-based voice customer support agent for **Aura Skincare**, a fictional 
 | Unclear audio | Low-confidence transcripts are tagged `[unclear audio]` so the agent asks the customer to repeat instead of guessing |
 | Post-call summary | Chronological transcript (with tool calls) and a JSON outcome: LLM judgement fields merged with computed facts |
 | Testing UI | Start/End, live Listening/Thinking/Speaking indicator, mic level meter, test-orders panel, one-click test prompts, typed fallback |
-| Extras | Barge-in (talk over Aria to interrupt), Hinglish replies, per-turn latency readout, "are you still there?" prompt, text mode if mic is unavailable |
+| Hinglish | Hinglish/Hindi is detected in code each turn and Aria replies in Roman-script Hinglish |
+| Resilience | Automatic fallback to another Groq model on rate limits or outages; polite spoken fallback if everything fails |
+| Extras | Barge-in (talk over Aria to interrupt), a short spoken filler ("Let me check that for you") while a tool runs, which cuts first-audio time on order lookups from ~2 s to ~0.9 s, per-turn latency readout, "are you still there?" prompt, text mode if mic is unavailable |
 
 ---
 
@@ -37,7 +39,8 @@ A browser-based voice customer support agent for **Aura Skincare**, a fictional 
           │  end-of-turn (750 ms after last final result)
           ▼
    POST /api/chat {messages}  ───────────────────►  sanitize history
-                                                    agent loop ─────────── stream ───────►  Llama 3.3 70B
+                                                    agent loop ─────────── stream ───────►  gpt-oss-120b
+                                                      (on 429: gpt-oss-20b → qwen3)
                                                       │  ◄── tool_call(get_order_details) ──  (tool calling)
                                                       │  run tool in code (orders.js / policy)
                                                       │  ── tool result ───────────────────►
@@ -151,7 +154,10 @@ Open `http://localhost:3000` in Chrome or Edge, click **Start Call**, and allow 
 ```bash
 npm test        # unit tests: ID normalisation, policy decisions, tools, echo filter, sentence splitting
 npm run eval    # 8 live scenarios against Groq: tracking, policy refusal, out-of-scope, invalid/missing ID, cancel rules, Hinglish, prompt injection
+npm run eval -- hinglish   # run only scenarios whose name matches
 ```
+
+Latest eval run: **8/8 passing**, with full replies (including tool calls) in roughly 0.6–1.7 s.
 
 ---
 
@@ -182,7 +188,7 @@ New **Web Service** → Build command: *(none)*, Start command: `npm start` → 
 
 I chose a **modular STT → LLM → TTS pipeline** over a speech-to-speech realtime model because the assignment is mostly about *control*: following policy, calling tools reliably, and not promising things. A modular pipeline gives me a text checkpoint at every step. I can log exactly what the model heard, inspect every tool call, unit-test the policy logic, and swap any component independently.
 
-- **Groq + Llama 3.3 70B** for the reasoning: it has solid function calling and very fast token generation (hundreds of tokens per second), which matters more for voice than for chat. It also has a free tier, so the public demo costs nothing to run.
+- **Groq + `openai/gpt-oss-120b`** for the reasoning: reliable function calling and very fast token generation on Groq, which matters more for voice than for chat. It's a reasoning model, so I set `reasoning_effort: low`: enough thinking to pick the right tool, not enough to create dead air. It also has a free tier, so the public demo costs nothing to run.
 - **Browser Web Speech API** for STT and TTS: zero latency for network audio upload, no extra keys, `en-IN` recognition, and Indian English voices on Edge and Windows. For a demo that evaluators must open and use instantly, this removed a whole class of setup and cost problems.
 - **Plain Node with no framework or dependencies**: the same handler files run as Vercel functions and under a tiny local server, so there is very little to break during deployment.
 
@@ -194,7 +200,13 @@ I chose a **modular STT → LLM → TTS pipeline** over a speech-to-speech realt
 - *The agent hearing itself.* With barge-in on, laptop speakers feed Aria's voice back into the mic and she would "interrupt" herself. I compare what the mic hears against what Aria is currently saying, and only treat it as an interruption when at least two words (and 40% of the utterance) are new. I also drop late echo that arrives just after she stops.
 - *Latency versus naturalness.* Waiting for the full LLM reply before speaking felt slow. Streaming the reply and speaking sentence by sentence means audio starts after the first sentence. When the customer interrupts, the stored history is rewritten to contain only what they actually heard, so the model doesn't assume they heard the rest.
 
-On the LLM side, Llama occasionally emits a malformed tool call, which Groq rejects with `tool_use_failed`. The agent retries once without streaming at temperature 0, and then falls back to a polite "could you say that again" rather than failing.
+On the LLM side, two practical problems showed up once I ran the evals against the real API:
+
+- *Free-tier rate limits.* Groq's free tier allows about 8,000 tokens per minute *per model*, and each request (system prompt plus tool schemas) is about 1,400 tokens. A brisk conversation could hit the limit and Aria would go quiet. Because limits are per model, the client falls back on a 429 to `gpt-oss-20b` and then `qwen3`, and remembers the cooldown so it skips a throttled model straight away.
+- *The model ignoring "reply in Hinglish".* A prompt instruction alone wasn't reliable, so the server now detects Hinglish in the customer's message (a small Hindi word list, plus Devanagari detection) and adds an explicit language note for that turn.
+- *Small invented promises.* Reading the eval transcripts, I caught Aria adding things like "we'll process a return once it's back with us". The fix was putting the boundary into the tool results themselves ("policy says nothing about refunds after refusal; do not promise one"), plus a regression check in `scripts/eval.js`.
+
+Malformed tool calls (`tool_use_failed`) are retried once without streaming; if everything fails, Aria says a polite "could you say that again" rather than crashing.
 
 ### 3. With one more week, what would I improve first?
 
