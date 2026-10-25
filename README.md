@@ -3,7 +3,8 @@
 A browser-based voice customer support agent for **Aura Skincare**, a fictional premium organic Indian skincare brand. Click **Start Call**, speak into your mic, and **Aria** answers out loud. She can look up live orders, apply return and cancellation policy, decline out-of-scope requests, and produce a transcript plus a structured JSON outcome when the call ends.
 
 - **Live demo:** https://ai-voice-cx-agent.vercel.app
-- **Demo video:** `<add link>`
+- **Demo video:** https://drive.google.com/file/d/18AuZJyDemzlQFcgLsXriBzcfP5vt4r_Y/view?usp=sharing
+- **Author:** Atharva Patil · [LinkedIn](https://www.linkedin.com/in/atharva-patil-1a6289436)
 - **Best in:** Chrome or Microsoft Edge on desktop (Edge has the most natural Indian English voice).
 
 > **Approach in brief:** A modular pipeline that runs in the browser: Web Speech API speech-to-text (en-IN), a Groq-hosted `gpt-oss-120b` agent (low reasoning effort) with function calling for order lookups and policy checks, and sentence-by-sentence browser text-to-speech with an Indian English voice. Policy decisions (return windows, cancellation rules) live in deterministic code that the LLM calls as tools, so the model decides *when* to check and the code decides *what is true*. Replies stream token by token and Aria starts speaking after the first sentence, which keeps the gap between turns short.
