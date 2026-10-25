@@ -113,7 +113,7 @@ Example:
 ## Project structure
 
 ```
-api/              Serverless handlers (Vercel); also used by server.js
+api/              Serverless handlers (Vercel); also used by node-server.js
   chat.js         POST /api/chat     → streams agent events (NDJSON)
   summary.js      POST /api/summary  → structured call outcome
   orders.js       GET  /api/orders   → mock orders for the helper panel
@@ -129,7 +129,7 @@ public/
   index.html, styles.css
   app.js          Call state machine, UI, streaming, barge-in
   speech.js       Listener (STT + endpointing), Speaker (TTS queue), helpers
-server.js         Zero-dependency local/Render server
+node-server.js    Zero-dependency local/Render server (excluded from Vercel via .vercelignore)
 test/             Unit tests (node:test)
 scripts/eval.js   Scenario evals against the real model
 ```

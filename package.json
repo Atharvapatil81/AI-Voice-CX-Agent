@@ -5,8 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node node-server.js",
+    "dev": "node --watch node-server.js",
     "test": "node --test",
     "eval": "node scripts/eval.js"
   },

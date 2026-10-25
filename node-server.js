@@ -1,4 +1,4 @@
-// Local / Render server: serves public/ and routes /api/* to the same
+// Local / Render server (named so Vercel does not auto-detect it): serves public/ and routes /api/* to the same
 // handlers Vercel uses. Zero dependencies.
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';

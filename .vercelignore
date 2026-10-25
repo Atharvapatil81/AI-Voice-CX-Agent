@@ -1,0 +1,6 @@
+# Local-only files. Vercel auto-detects a root server file as the whole app's
+# backend, which would hijack the static page and the api/ functions.
+node-server.js
+test/
+scripts/
+.claude/
