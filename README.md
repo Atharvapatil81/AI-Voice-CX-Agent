@@ -176,7 +176,7 @@ New **Web Service** → Build command: *(none)*, Start command: `npm start` → 
 ## Known limitations
 
 - **Browser-dependent speech.** Web Speech recognition works in Chrome and Edge only; Firefox and Safari users can still type (Aria still speaks). Voice quality depends on the voices installed in the browser/OS.
-- **Echo on laptop speakers.** Barge-in uses a text-overlap echo filter, not true acoustic echo cancellation. With headphones it's very reliable; on speakers it can occasionally miss an interruption (it errs on the side of *not* interrupting).
+- **Echo on laptop speakers.** By default the call is half-duplex: the mic is paused while Aria speaks and a fresh recognition session starts when she finishes, so she never hears herself. Barge-in is opt-in for headphone users; it uses a fuzzy text-overlap echo filter rather than true acoustic echo cancellation.
 - **No customer verification.** Anyone who says an order ID hears its details. A real deployment would verify phone number or OTP first.
 - **Demo state.** Cancellations and tickets are not persisted; the order database is in memory and shared read-only.
 
