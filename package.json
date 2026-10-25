@@ -1,0 +1,17 @@
+{
+  "name": "aura-voice-agent",
+  "version": "1.0.0",
+  "description": "Browser-based AI voice customer support agent (Aria) for the fictional D2C brand Aura Skincare.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "eval": "node scripts/eval.js"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "license": "MIT"
+}

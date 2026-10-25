@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aria · Aura Skincare Voice Support</title>
+  <meta name="description" content="Talk to Aria, the AI voice support agent for Aura Skincare." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%23c86b4a'/><text x='50' y='66' font-size='48' text-anchor='middle' fill='white' font-family='Georgia'>A</text></svg>" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">A</span>
+      <div>
+        <div class="brand-name">Aura Skincare</div>
+        <div class="brand-sub">Voice support with Aria (AI demo)</div>
+      </div>
+    </div>
+    <div id="configBadge" class="badge" hidden></div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <main class="layout">
+    <!-- Call panel -->
+    <section class="card call-card" aria-labelledby="callTitle">
+      <h2 id="callTitle" class="sr-only">Call</h2>
+      <div class="call-head">
+        <div id="orb" class="orb" data-phase="idle" aria-hidden="true">
+          <div class="orb-core"></div>
+          <div class="orb-ring"></div>
+        </div>
+        <div class="call-meta">
+          <div class="agent-name">Aria <span class="muted">· Aura Skincare</span></div>
+          <div id="stateLabel" class="state-label" data-phase="idle" role="status" aria-live="polite">Ready to call</div>
+          <div id="stateDetail" class="state-detail">Click Start Call and allow microphone access.</div>
+          <div class="meter" title="Microphone level"><div id="meterFill" class="meter-fill"></div></div>
+        </div>
+        <div class="call-timer" id="callTimer">00:00</div>
+      </div>
+
+      <div class="call-actions">
+        <button id="startBtn" class="btn btn-start">Start Call</button>
+        <button id="endBtn" class="btn btn-end" disabled>End Call</button>
+      </div>
+
+      <div id="captions" class="captions" aria-live="polite"></div>
+
+      <ol id="liveTranscript" class="transcript" aria-label="Live transcript"></ol>
+
+      <form id="textForm" class="text-form" autocomplete="off">
+        <input id="textInput" type="text" placeholder="Or type a message (works during a call)…" disabled />
+        <button class="btn btn-ghost" type="submit" id="sendBtn" disabled>Send</button>
+      </form>
+    </section>
+
+    <!-- Helper panel -->
+    <aside class="side">
+      <section class="card">
+        <h3>Test orders</h3>
+        <p class="muted small">Say “Where is my order ORD-101?” or click an ID to copy it.</p>
+        <div id="orders" class="orders"></div>
+      </section>
+
+      <section class="card">
+        <h3>Things to try</h3>
+        <div id="scenarios" class="chips"></div>
+        <p class="muted small">Clicking a chip puts it in the message box. You can also just say it.</p>
+      </section>
+
+      <section class="card settings">
+        <h3>Settings</h3>
+        <label class="field">
+          <span>Agent voice</span>
+          <select id="voiceSelect"></select>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="bargeIn" checked />
+          <span>Barge-in: interrupt Aria by talking over her <span class="muted">(works best with headphones)</span></span>
+        </label>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Post-call summary -->
+  <section id="postCall" class="post-call" hidden>
+    <div class="post-head">
+      <h2>Call summary</h2>
+      <div class="post-actions">
+        <button id="copyJson" class="btn btn-ghost">Copy JSON</button>
+        <button id="downloadJson" class="btn btn-ghost">Download JSON</button>
+        <button id="newCall" class="btn btn-start">New call</button>
+      </div>
+    </div>
+    <div class="post-grid">
+      <div class="card">
+        <h3>Transcript</h3>
+        <ol id="finalTranscript" class="transcript final"></ol>
+      </div>
+      <div class="card">
+        <h3>Structured outcome</h3>
+        <div id="outcomeBadges" class="outcome-badges"></div>
+        <pre id="summaryJson" class="json">Generating summary…</pre>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer muted small">
+    Demo for the Datastraw AI Voice Agent assignment. Aura Skincare is fictional. Voice works best in Chrome or Edge.
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
