@@ -2,7 +2,7 @@
 
 A browser-based voice customer support agent for **Aura Skincare**, a fictional premium organic Indian skincare brand. Click **Start Call**, speak into your mic, and **Aria** answers out loud. She can look up live orders, apply return and cancellation policy, decline out-of-scope requests, and produce a transcript plus a structured JSON outcome when the call ends.
 
-- **Live demo:** `<add your deployed URL here>`
+- **Live demo:** https://ai-voice-cx-agent.vercel.app
 - **Demo video:** `<add link>`
 - **Best in:** Chrome or Microsoft Edge on desktop (Edge has the most natural Indian English voice).
 
